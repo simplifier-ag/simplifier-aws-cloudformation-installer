@@ -157,11 +157,13 @@ Parameters:
     Type: Number
     MinValue: '20'
     Default: '20'
+
+
 Resources:
   SimplifierStackVPC:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://appcomposer-5diirvdnn9wwy1fj-eu-central-1.s3.eu-central-1.amazonaws.com/vpc.yaml
+      TemplateURL: https://raw.githubusercontent.com/simplifier-ag/simplifier-aws-cloudformation-installer/main/vpc.yaml
       Parameters:
         VpcCIDR: !Ref VpcCIDR
         PublicSubnet1CIDR: !Ref PublicSubnet1CIDR
@@ -172,7 +174,7 @@ Resources:
   SimplifierStackECS:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://appcomposer-5diirvdnn9wwy1fj-eu-central-1.s3.eu-central-1.amazonaws.com/ecs.yaml
+      TemplateURL: https://raw.githubusercontent.com/simplifier-ag/simplifier-aws-cloudformation-installer/main/ecs.yaml
       Parameters:
         VPCId: !GetAtt SimplifierStackVPC.Outputs.VPC
         SubnetIds: !GetAtt SimplifierStackVPC.Outputs.PrivateSubnets
@@ -194,7 +196,7 @@ Resources:
   SimplifierStackEC2:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://appcomposer-5diirvdnn9wwy1fj-eu-central-1.s3.eu-central-1.amazonaws.com/ec2.yaml
+      TemplateURL: https://raw.githubusercontent.com/simplifier-ag/simplifier-aws-cloudformation-installer/main/ec2.yaml
       Parameters:
         InstanceType: !Ref InstanceType
         ssmRoleName: !GetAtt rolesANDsecurityGroup.Outputs.ssmRoleName
@@ -210,7 +212,7 @@ Resources:
   SimplifierStackRDS:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://appcomposer-5diirvdnn9wwy1fj-eu-central-1.s3.eu-central-1.amazonaws.com/rds.yaml
+      TemplateURL: https://raw.githubusercontent.com/simplifier-ag/simplifier-aws-cloudformation-installer/main/rds.yaml
       Parameters:
         VPCId: !GetAtt SimplifierStackVPC.Outputs.VPC
         SubnetIds: !GetAtt SimplifierStackVPC.Outputs.PrivateSubnets
@@ -224,7 +226,7 @@ Resources:
   rolesANDsecurityGroup:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://appcomposer-5diirvdnn9wwy1fj-eu-central-1.s3.eu-central-1.amazonaws.com/rolesANDsecurityGroup.yaml
+      TemplateURL: https://raw.githubusercontent.com/simplifier-ag/simplifier-aws-cloudformation-installer/main/rolesANDsecurityGroup.yaml
       Parameters:
         VPCId: !GetAtt SimplifierStackVPC.Outputs.VPC
 
