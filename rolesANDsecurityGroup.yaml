@@ -1,0 +1,174 @@
+Parameters:
+  VPCId:
+    Description: VPCId
+    Type: AWS::EC2::VPC::Id
+
+  Location:
+    Description: The IP address range that can be used to access resource.
+    Type: String
+    Default: 0.0.0.0/0
+    MinLength: "9"
+    MaxLength: "18"
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    
+########################  EC2 ###################################
+Resources:
+  SSMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Description: "This role is used by ec2 to make SSM and ECS compatible"
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      RoleName: !Sub "simplifier-ec2"
+
+
+  ec2InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "simplifier-frontend"
+      GroupDescription: Enable SSH access
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp: !Ref Location
+        - IpProtocol: tcp
+          FromPort: "443"
+          ToPort: "443"
+          CidrIp: !Ref Location
+        - IpProtocol: tcp
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: !Ref Location
+      Tags:
+        - Key: Name
+          Value: "simplifier-frontend"
+########################  RDS ###################################
+
+  RDSInstanceSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName: "simplifier-DB-SG"
+      GroupDescription: "RDS traffic"
+      VpcId: !Ref VPCId
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: !Ref Location
+      Tags:
+        - Key: Name
+          Value: "simplifier-DB-SG"
+        
+
+  InstanceSecurityGroupIngressec2:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: "RDSInstanceSecurityGroup"
+    Properties:
+      GroupId: !Ref RDSInstanceSecurityGroup
+      IpProtocol: "tcp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !Ref ec2InstanceSecurityGroup
+
+  InstanceSecurityGroupIngressecs:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: "RDSInstanceSecurityGroup"
+    Properties:
+      GroupId: !Ref RDSInstanceSecurityGroup
+      IpProtocol: "tcp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !Ref ECSSecurityGroup
+
+########################  ECS ###################################
+
+  ECSSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName: "simplifier-ECS-SG"
+      GroupDescription: "ECS task traffic"
+      VpcId: !Ref VPCId
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: !Ref Location
+      Tags:
+        - Key: Name
+          Value: "simplifier-ECS-SG"
+        
+
+  serviceSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: "ECSSecurityGroup"
+    Properties:
+      GroupId: !Ref ECSSecurityGroup
+      IpProtocol: "tcp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !Ref ec2InstanceSecurityGroup
+
+  ecsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ecs-tasks.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Description: "This role is used by traefic to get data from ECS"
+#      ManagedPolicyArns: 
+#        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+#        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      RoleName: !Sub "simplifier-ecs"
+  ecsPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: root
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+            - ecs:ListClusters
+            - ecs:DescribeClusters
+            - ecs:ListTasks
+            - ecs:DescribeTasks
+            - ecs:DescribeContainerInstances
+            - ecs:DescribeTaskDefinition
+            - ec2:DescribeInstances
+            - ssm:DescribeInstanceInformation
+            Resource: '*'
+      Roles:
+        - !Ref ecsRole
+
+
+Outputs:
+  ssmRoleName:
+    Description: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    Value: !Ref SSMRole
+  ec2InstanceSecurityGroup:
+    Description: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    Value: !GetAtt ec2InstanceSecurityGroup.GroupId
+  RDSInstanceSecurityGroup:
+    Description: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    Value: !GetAtt RDSInstanceSecurityGroup.GroupId
+  ecsSecurityGroup:
+    Description: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    Value: !GetAtt ECSSecurityGroup.GroupId
+  ecsRoleARN:
+    Description: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    Value: !GetAtt ecsRole.Arn

@@ -1,0 +1,242 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  This CloudFormation template deploys a stack for configuring infrastructure components on AWS for Simplifier, a cloud-based application development platform. 
+  It provisions resources such as a Virtual Private Cloud (VPC), subnets, an RDS database instance, EC2 instances, and necessary IAM roles and security groups.
+  Users can customize parameters such as VPC configuration, subnet CIDR blocks, RDS database instance class and storage, EC2 instance type, and more.
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - 
+        Label: 
+          default: "Simplifier Configuration"
+        Parameters: 
+          - virtualHost
+          - simpVer
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcCIDR
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PrivateSubnet1CIDR
+          - PrivateSubnet2CIDR
+      - 
+        Label: 
+          default: "Database Configuration"
+        Parameters: 
+          - DBInstanceClass
+          - DBAllocatedStorage
+          - DBUsername
+          - DBPassword
+      - 
+        Label: 
+          default: "EC2 Configuration"
+        Parameters: 
+          - InstanceType
+          - dataDiskSize
+          - VMram
+    ParameterLabels: 
+      virtualHost: 
+        default: "Virtual Hostname"
+      simpVer:
+        default: "What's the Simplifier Version you want to deploy"
+      VpcCIDR: 
+        default: "The CIDR block for your VPC"
+      PublicSubnet1CIDR: 
+        default: "The CIDR block for the first public subnet"
+      PublicSubnet2CIDR: 
+        default: "The CIDR block for the second public subnet"
+      PrivateSubnet1CIDR: 
+        default: "The CIDR block for the first private subnet"
+      PrivateSubnet2CIDR: 
+        default: "The CIDR block for the second private subnet"
+      DBInstanceClass: 
+        default: "The instance class for your RDS database"
+      DBAllocatedStorage: 
+        default: "The allocated storage for your RDS database in GB"
+      DBUsername: 
+        default: "The username for your RDS database"
+      DBPassword: 
+        default: "The password for your RDS database"
+      InstanceType: 
+        default: "The instance type for your EC2 instance"
+      dataDiskSize: 
+        default: "The size of the data disk attached to your EC2 instance in GB"
+      VMram: 
+        default: "The RAM capacity of your virtual machine"
+        
+Mappings:
+  RAMValues:
+    '16GB-RAM':
+      Value: '12'
+    '32GB-RAM':
+      Value: '28'
+    '64GB-RAM':
+      Value: '60'
+    '128GB-RAM':
+      Value: '124'
+  SimplifierVersion:
+    'Release-8-EHP-1':
+      Value: '8.1'
+    'Release-8':
+      Value: '8.0'
+
+
+Parameters:
+  VpcCIDR:
+    Description: Please enter The IPv4 network range for the VPC, in CIDR notation. For example, 10.0.0.0/16. We modify the specified CIDR block to its canonical form; for example, if you specify 100.68.0.18/18, we modify it to 100.68.0.0/18.
+    Type: String
+    Default: 172.31.77.0/26
+  PublicSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the 1st public subnet in the first Availability Zone.
+    Type: String
+    Default: 172.31.77.0/28
+  PublicSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the 2nd public subnet in the second Availability Zone.
+    Type: String
+    Default: 172.31.77.16/28
+  PrivateSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the 1st private subnet in the first Availability Zone.
+    Type: String
+    Default: 172.31.77.32/28
+  PrivateSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the 2nd private subnet in the second Availability Zone.
+    Type: String
+    Default: 172.31.77.48/28
+  DBInstanceClass:
+    Default: db.t4g.medium
+    Description: The compute and memory capacity of the DB instance, for example db.m5.large.
+    Type: String
+    ConstraintDescription: Must select a valid DB instance type.
+  DBAllocatedStorage:
+    Default: '20'
+    Description: The amount of storage in gibibytes (GiB) to be initially allocated for the database instance.
+    Type: Number
+    MinValue: '20'
+    MaxValue: '65536'
+    ConstraintDescription: must be between 20 and 65536 GiB.
+  DBUsername:
+    NoEcho: 'true'
+    Description: Username for MySQL database access. String should starts with a letter (a-z or A-Z) and can be followed by any combination of letters (a-z or A-Z) or digits (0-9).
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBPassword:
+    NoEcho: 'true'
+    Description: Password MySQL database access. String that can contain zero or more occurrences of any letter (a-z or A-Z) or digit (0-9).
+    Type: String
+    MinLength: '8'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric characters.
+  InstanceType:
+    Description: EC2 instance type. We would recomment using x86_64 Memory optimized instances. https://docs.aws.amazon.com/ec2/latest/instancetypes/mo.html
+    Type: String
+    Default: 'r5a.large'
+#    AllowedValues: 
+    ConstraintDescription: must be a valid EC2 instance type. https://aws.amazon.com/ec2/instance-types/
+  simpVer:
+    Description: Version of simplifier to use. https://community.simplifier.io/changelog/
+    Type: String
+    Default: "Release-8-EHP-1"
+    AllowedValues: ["Release-8-EHP-1", "Release-8"]
+  VMram:
+    Description: Please provide RAM capacity of EC2 you selected as instance type in above parameter.
+    Type: String
+    Default: "16GB-RAM"
+    AllowedValues: ["16GB-RAM", "32GB-RAM", "64GB-RAM", "128GB-RAM"]
+  virtualHost:
+    Description: Fully Qualified Domain Name (FQDN). Example, "cloudformation.simplifier.io". Note that application can not be access via IP and will only be accesible via this URL.
+    Type: String
+  dataDiskSize:
+    Description: Size of EBS device [in GB] attached to VM and will be mounted at /var/lib/simplifier
+    Type: Number
+    MinValue: '20'
+    Default: '20'
+Resources:
+  SimplifierStackVPC:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://appcomposer-5diirvdnn9wwy1fj-eu-central-1.s3.eu-central-1.amazonaws.com/vpc.yaml
+      Parameters:
+        VpcCIDR: !Ref VpcCIDR
+        PublicSubnet1CIDR: !Ref PublicSubnet1CIDR
+        PublicSubnet2CIDR: !Ref PublicSubnet2CIDR
+        PrivateSubnet1CIDR: !Ref PrivateSubnet1CIDR
+        PrivateSubnet2CIDR: !Ref PrivateSubnet2CIDR
+
+  SimplifierStackECS:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://appcomposer-5diirvdnn9wwy1fj-eu-central-1.s3.eu-central-1.amazonaws.com/ecs.yaml
+      Parameters:
+        VPCId: !GetAtt SimplifierStackVPC.Outputs.VPC
+        SubnetIds: !GetAtt SimplifierStackVPC.Outputs.PrivateSubnets
+        ecsSecurityGroup: !GetAtt rolesANDsecurityGroup.Outputs.ecsSecurityGroup
+        ecsRoleARN: !GetAtt rolesANDsecurityGroup.Outputs.ecsRoleARN
+        simplifierVersion: !FindInMap 
+          - SimplifierVersion
+          - !Ref simpVer
+          - Value
+        databaseHost: !GetAtt SimplifierStackRDS.Outputs.rdsEndpoint
+        databaseUser: !Ref DBUsername
+        databasePassword: !Ref DBPassword
+        virtualHost: !Ref virtualHost
+        jvmParameter: !FindInMap 
+          - RAMValues
+          - !Ref VMram
+          - Value
+
+  SimplifierStackEC2:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://appcomposer-5diirvdnn9wwy1fj-eu-central-1.s3.eu-central-1.amazonaws.com/ec2.yaml
+      Parameters:
+        InstanceType: !Ref InstanceType
+        ssmRoleName: !GetAtt rolesANDsecurityGroup.Outputs.ssmRoleName
+        ec2InstanceSecurityGroup: !GetAtt rolesANDsecurityGroup.Outputs.ec2InstanceSecurityGroup
+        dataDiskSize: !Ref dataDiskSize
+        VPCId: !GetAtt SimplifierStackVPC.Outputs.VPC
+        SubnetId: !GetAtt SimplifierStackVPC.Outputs.PublicSubnet1
+        DBUsername: !Ref DBUsername
+        DBPassword: !Ref DBPassword
+        DBHost: !GetAtt SimplifierStackRDS.Outputs.rdsEndpoint
+
+
+  SimplifierStackRDS:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://appcomposer-5diirvdnn9wwy1fj-eu-central-1.s3.eu-central-1.amazonaws.com/rds.yaml
+      Parameters:
+        VPCId: !GetAtt SimplifierStackVPC.Outputs.VPC
+        SubnetIds: !GetAtt SimplifierStackVPC.Outputs.PrivateSubnets
+        DBInstanceID: simplifier
+        DBInstanceClass: !Ref DBInstanceClass
+        DBAllocatedStorage: !Ref DBAllocatedStorage
+        DBUsername: !Ref DBUsername
+        DBPassword: !Ref DBPassword
+        rdsSecurityGroup: !GetAtt rolesANDsecurityGroup.Outputs.RDSInstanceSecurityGroup
+
+  rolesANDsecurityGroup:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://appcomposer-5diirvdnn9wwy1fj-eu-central-1.s3.eu-central-1.amazonaws.com/rolesANDsecurityGroup.yaml
+      Parameters:
+        VPCId: !GetAtt SimplifierStackVPC.Outputs.VPC
+
+
+Outputs:
+  SimplifierInboundPublicIP:
+    Description: Ingress Public IP- A reference to the EC2 Instance Public IP.
+    Value: !GetAtt SimplifierStackEC2.Outputs.EC2EipAddress
+    Export:
+      Name: !Sub "${AWS::StackName}-EC2-EIP"
+  SimplifierOutboundPublicIP:
+    Description: Egress Public IP- A reference to the NAT gateway public IP.
+    Value: !GetAtt SimplifierStackVPC.Outputs.NATIp
+    Export:
+      Name: !Sub "${AWS::StackName}-NAT-EIP"

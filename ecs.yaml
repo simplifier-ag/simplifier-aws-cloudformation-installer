@@ -1,0 +1,382 @@
+Parameters:
+  simplifierLogGroupName:
+    Description: Cloudwatch Log group for simplifier container logs.
+    Type: String
+    Default: "/ecs/simplifier-task-simplifier"
+  launchpadLogGroupName:
+    Description: Cloudwatch Log group for launchpad container logs.
+    Type: String  
+    Default: "/ecs/simplifier-task-launchpad"
+  runtimeLogGroupName:
+    Description: Cloudwatch Log group for runtime container logs.
+    Type: String
+    Default: "/ecs/simplifier-task-runtime"
+  designtimeLogGroupName:
+    Description: Cloudwatch Log group for designtime container logs.
+    Type: String
+    Default: "/ecs/simplifier-task-designtime"
+  traefikLogGroupName:
+    Description: Cloudwatch Log group for traefik container logs.
+    Type: String
+    Default: "/ecs/simplifier-task-traefik"
+  simplifierVersion:
+    Description: Version of simplifier to use. https://community.simplifier.io/changelog/
+    Type: String
+  databaseHost:
+    Description: databaseHost
+    Type: String
+  databaseUser:
+    Description: databaseUser
+    Type: String
+  databasePassword:
+    Description: databasePassword
+    Type: String
+  virtualHost:
+    Description: virtualHost
+    Type: String
+  jvmParameter:
+    Description: Provide a value = VM-RAM-4{Ex. 16-4=12}
+    Type: String
+  VPCId:
+    Description: VPCId
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Description: SubnetId
+    Type: List<AWS::EC2::Subnet::Id>
+  ecsSecurityGroup:
+    Description: xxxxxxxxxxxxxxxxxxxx
+    Type: AWS::EC2::SecurityGroup::Id
+  ecsRoleARN:
+    Description: xxxxxxxxxxxxxxxxxxx
+    Type: String
+
+
+
+Resources:
+  # ECS Resources
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: "simplifier-cluster"
+      ClusterSettings:
+      - Name: containerInsights
+        Value: disabled
+
+  simplifierLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref simplifierLogGroupName
+      RetentionInDays: 30
+  launchpadLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref launchpadLogGroupName
+      RetentionInDays: 30
+  runtimeLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref runtimeLogGroupName
+      RetentionInDays: 30
+  designtimeLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref designtimeLogGroupName
+      RetentionInDays: 30
+  traefikLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref traefikLogGroupName
+      RetentionInDays: 30
+
+  taskdefinitionSimplifier: 
+    Type: AWS::ECS::TaskDefinition
+    Properties: 
+      RequiresCompatibilities:
+        - "EC2"
+      Family: "simplifier-task"
+      NetworkMode: "awsvpc"
+      Volumes:
+        - Name: "LaunchpadData"
+          Host:
+            SourcePath: "/var/lib/simplifier/launchpad/data"
+        - Name: "RuntimeData"
+          Host:
+            SourcePath: "/var/lib/simplifier/workflow-runtime/data"
+        - Name: "DesigntimeData"
+          Host:
+            SourcePath: "/var/lib/simplifier/workflow-designtime/data"
+        - Name: "SimplifierData"
+          Host:
+            SourcePath: "/var/lib/simplifier/simplifier/data"
+      ContainerDefinitions:
+        - Name: "simplifier"
+          Image: !Sub "simplifierag/simplifier:${simplifierVersion}"
+          MemoryReservation: 7000
+          PortMappings:
+            - Name: "simplifier-8080-tcp"
+              ContainerPort: 8080
+              HostPort: 8080
+              Protocol: "tcp"
+          Essential: true
+          Environment:
+            - Name: "MODULE_HOST"
+              Value: "localhost"
+            - Name: "MYSQL_PASSWORD"
+              Value: !Ref databasePassword
+            - Name: "JMX_AGENT"
+              Value: "false"
+            - Name: "JMX_AGENT_PLUGINS"
+              Value: "false"
+            - Name: "JVM_PARAMETER"
+              Value: !Sub "-Xmx${jvmParameter}g -Xms2g -XX:MaxMetaspaceSize=512m -XX:+UseG1GC -XX:+UseStringDeduplication -XX:-UseGCOverheadLimit -Xss256m"
+            - Name: "MYSQL_USER"
+              Value: !Ref databaseUser
+            - Name: "SIMPLIFIER_HOST"
+              Value: "localhost"
+            - Name: "MYSQL_HOST"
+              Value: !Ref databaseHost
+            - Name: "MYSQL_PORT"
+              Value: "3306"
+            - Name: "PLUGINLIST"
+              Value: "keyValueStorePlugin,pdfPlugin,captcha,contentRepoPlugin,jsonStore"
+            - Name: "SECOND_SEED"
+              Value: "localhost"
+            - Name: "VIRTUAL_HOST"
+              Value: !Ref virtualHost
+            - Name: "MYSQL_DB"
+              Value: "simplifier"
+            - Name: "DB"
+              Value: "mysql"
+          MountPoints:
+            - SourceVolume: "SimplifierData"
+              ContainerPath: "/opt/simplifier/data"
+          DockerLabels:
+            traefik.enable: "true"
+            traefik.http.middlewares.prod_cors_header.headers.accessControlAllowCredentials: "true"
+            traefik.http.middlewares.prod_cors_header.headers.accessControlExposeHeaders: "remainingTokenLifetime"
+            traefik.http.middlewares.prod_cors_header.headers.accesscontrolallowheaders: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,SimplifierToken,SimplifierApp,SimplifierModule,SimplifierModuleInterface,SimplifierClientBusinessObject,SimplifierClientBusinessObjectFunction,sap-cancel-on-close,sap-contextid-accept,MaxDataServiceVersion,DataServiceVersion,Content-Length,SimplifierApiKey,OData-MaxVersion,OData-Version,MIME-Version,X-CSRF-Token"
+            traefik.http.middlewares.prod_cors_header.headers.accesscontrolallowmethods: "GET,OPTIONS,PUT,POST,DELETE,PATCH"
+            traefik.http.middlewares.prod_cors_header.headers.accesscontrolalloworiginList: !Sub "https://${virtualHost},ionic://localhost"
+            traefik.http.middlewares.prod_cors_header.headers.accesscontrolmaxage: "1728000"
+            traefik.http.middlewares.prod_cors_header.headers.addvaryheader: "true"
+            traefik.http.routers.prod.entrypoints: "websecure"
+            traefik.http.routers.prod.middlewares: "prod_cors_header"
+            traefik.http.routers.prod.rule: !Sub "Host(`${virtualHost}`)"
+            traefik.http.routers.prod.tls: "true"
+            traefik.http.routers.prod.tls.certresolver: "letsencrypt"
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              awslogs-group: !Ref simplifierLogGroupName
+              awslogs-region: "eu-central-1"
+              awslogs-stream-prefix: "ecs"
+        - Name: "launchpad"
+          Image: !Sub "simplifierag/launchpad:${simplifierVersion}"
+          Cpu: 0
+          MemoryReservation: 499
+          Essential: true
+          Environment:
+            - Name: "SIMPLIFIER_HOST"
+              Value: "localhost"
+            - Name: "MODULE_HOST"
+              Value: "localhost"
+            - Name: "SECOND_SEED"
+              Value: "localhost"
+            - Name: "JVM_ARGS"
+              Value: "-Xmx0.5g"
+          MountPoints:
+            - SourceVolume: "LaunchpadData"
+              ContainerPath: "/home/launchpad/storage"
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              awslogs-group: !Ref launchpadLogGroupName
+              awslogs-region: "eu-central-1"
+              awslogs-stream-prefix: "ecs"
+        - Name: "designtime"
+          Image: !Sub "simplifierag/workflow-designtime:${simplifierVersion}"
+          Cpu: 0
+          MemoryReservation: 499
+          Essential: false
+          Environment:
+            - Name: "MODULE_HOST"
+              Value: "localhost"
+            - Name: "SECOND_SEED"
+              Value: "localhost"
+            - Name: "DB_PASS"
+              Value: !Ref databasePassword
+            - Name: "DB_PORT"
+              Value: "3306"
+            - Name: "DB_USER"
+              Value: !Ref databaseUser
+            - Name: "JVM_ARGS"
+              Value: "-Xmx1g"
+            - Name: "TZ"
+              Value: "Europe/Berlin"
+            - Name: "SIMPLIFIER_HOST"
+              Value: "localhost"
+            - Name: "MODULE_PORT"
+              Value: "2888"
+            - Name: "DB_HOST"
+              Value: !Ref databaseHost
+            - Name: "DB_DATABASE"
+              Value: "simplifier_wdt"
+          MountPoints:
+            - SourceVolume: "DesigntimeData"
+              ContainerPath: "/home/workflowDesigntime/data"
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              awslogs-group: !Ref designtimeLogGroupName
+              awslogs-region: "eu-central-1"
+              awslogs-stream-prefix: "ecs"
+        - Name: "runtime"
+          Image: !Sub "simplifierag/workflow-runtime:${simplifierVersion}"
+          MemoryReservation: 499
+          Essential: false
+          Environment:
+            - Name: "MODULE_HOST"
+              Value: "localhost"
+            - Name: "ARCHIVE_ENABLED"
+              Value: "true"
+            - Name: "DB_PORT"
+              Value: "3306"
+            - Name: "JVM_PARAMETER"
+              Value: "-Xmx1g"
+            - Name: "DB_USER"
+              Value: !Ref databaseUser
+            - Name: "TZ"
+              Value: "Europe/Berlin"
+            - Name: "ARCHIVE_TIME"
+              Value: "02:00"
+            - Name: "SIMPLIFIER_HOST"
+              Value: "localhost"
+            - Name: "MODULE_PORT"
+              Value: "2777"
+            - Name: "ARCHIVE_INTERVAL"
+              Value: "1 week"
+            - Name: "DB_HOST"
+              Value: !Ref databaseHost
+            - Name: "SECOND_SEED"
+              Value: "localhost"
+            - Name: "SIMPLIFIER_LAUNCHPAD_BASE_URL"
+              Value: !Sub "https://${virtualHost}"
+            - Name: "DB_PASS"
+              Value: !Ref databasePassword
+            - Name: "ARCHIVE_MAX_AGE_COMPLETED"
+              Value: "6 months"
+            - Name: "DB_DATABASE"
+              Value: "simplifier_wrt"
+          MountPoints:
+            - SourceVolume: "RuntimeData"
+              ContainerPath: "/home/workflow-runtime/data"
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              awslogs-group: !Ref runtimeLogGroupName
+              awslogs-region: "eu-central-1"
+              awslogs-stream-prefix: "ecs"
+
+  taskdefinitiontraefik: 
+    Type: AWS::ECS::TaskDefinition
+    Properties: 
+      RequiresCompatibilities:
+        - "EC2"
+      Family: "simplifier-task-traefik"
+      NetworkMode: "bridge"
+      Volumes:
+        - Name: letsencrypt
+          Host:
+            SourcePath: /etc/ssl/certs
+        - Name: TraefikConfig
+          Host:
+            SourcePath: /var/lib/simplifier/traefik
+        - Name: dockersocket
+          Host:
+            SourcePath: /var/run/docker.sock
+      ContainerDefinitions:
+        - Name: simplifier-traefik
+          Image: traefik:2.11
+          Cpu: 0
+          Memory: 1000
+          PortMappings:
+            - ContainerPort: 80
+              HostPort: 80
+              Protocol: tcp
+            - ContainerPort: 443
+              HostPort: 443
+              Protocol: tcp
+          Essential: true
+          Command:
+            - --accesslog
+            - --accesslog.fields.names.StartUTC=drop
+            - --entrypoints.websecure.address=:443
+            - --providers.ecs=true
+            - --providers.ecs.exposedbydefault=false
+            - --providers.ecs.clusters=simplifier-cluster
+            - --providers.file.directory=/configuration
+            - --providers.file.watch=true
+            - --entrypoints.web.address=:80
+            - --entrypoints.web.http.redirections.entryPoint.to=websecure
+            - --entrypoints.web.http.redirections.entryPoint.scheme=https
+            - --entrypoints.web.http.redirections.entrypoint.permanent=true
+            - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+            - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+            - --certificatesresolvers.letsencrypt.acme.email=admins@simplifier.io
+            - --certificatesresolvers.letsencrypt.acme.storage=/certs/acme.json
+          Environment:
+            - Name: TZ
+              Value: Europe/Berlin
+          MountPoints:
+            - SourceVolume: dockersocket
+              ContainerPath: /var/run/docker.sock
+            - SourceVolume: TraefikConfig
+              ContainerPath: /configuration
+            - SourceVolume: letsencrypt
+              ContainerPath: /certs
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref traefikLogGroupName
+              awslogs-region: eu-central-1
+              awslogs-stream-prefix: ecs
+      TaskRoleArn: !Ref ecsRoleARN
+      RequiresCompatibilities:
+        - EC2
+
+
+
+  
+
+  ECSServiceSimplifier:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: "simplifier-service"
+      TaskDefinition: !Ref taskdefinitionSimplifier
+      LaunchType: EC2
+      DesiredCount: 1
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups: 
+            - !Ref ecsSecurityGroup
+          Subnets: !Ref SubnetIds
+      Cluster:
+        Ref: ECSCluster
+
+
+  ECSServiceTraefik:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: "traefik-service"
+      TaskDefinition: !Ref taskdefinitiontraefik
+      LaunchType: EC2
+      DesiredCount: 1
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+      LaunchType: EC2
+      Cluster:
+        Ref: ECSCluster

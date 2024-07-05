@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS CloudFormation Sample Template for creating an Amazon RDS DB instance.
+Parameters:
+  DBInstanceID:
+    Default: simplifier
+    Description: My database instance
+    Type: String
+    MinLength: '1'
+    MaxLength: '63'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: >-
+      Must begin with a letter and must not end with a hyphen or contain two
+      consecutive hyphens.
+  DBInstanceClass:
+    Default: db.t4g.medium
+    Description: The compute and memory capacity of the DB instance, for example db.m5.large.
+    Type: String
+    ConstraintDescription: Must select a valid DB instance type.
+  DBAllocatedStorage:
+    Default: '20'
+    Description: The amount of storage in gibibytes (GiB) to be initially allocated for the database instance.
+    Type: Number
+    MinValue: '20'
+    MaxValue: '65536'
+    ConstraintDescription: must be between 20 and 65536 GiB.
+  DBUsername:
+    NoEcho: 'true'
+    Description: Username for MySQL database access
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBPassword:
+    NoEcho: 'true'
+    Description: Password MySQL database access
+    Type: String
+    MinLength: '8'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric characters.
+  VPCId:
+    Description: VPCId
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Description: SubnetId
+    Type: List<AWS::EC2::Subnet::Id>
+  rdsSecurityGroup:
+    Description: Security group Id for RDS
+    Type: AWS::EC2::SecurityGroup::Id
+
+
+Resources:
+  DatabaseInstance:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      DBInstanceIdentifier: !Ref DBInstanceID
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      Engine: MySQL
+      EngineVersion: "8.0.33"
+      DBSubnetGroupName: !Ref SubnetGroup
+      DBParameterGroupName: !Ref RDSDBParameterGroup
+      VPCSecurityGroups:
+        - !Ref rdsSecurityGroup
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DeleteAutomatedBackups: 'false'
+      CopyTagsToSnapshot: 'true'
+      BackupRetentionPeriod: '30'
+      StorageType: gp3
+      StorageEncrypted: 'true'
+    DeletionPolicy: Delete #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+      
+
+  SubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupName: "simplifier-subnetGroup"
+      DBSubnetGroupDescription: "Subnet Group"
+      SubnetIds: !Ref SubnetIds
+
+  RDSDBParameterGroup:
+    Type: 'AWS::RDS::DBParameterGroup'
+    Properties:
+      DBParameterGroupName: simplifier-parameter-group
+      Description: simplifier DB parameters
+      Family: mysql8.0
+      Parameters:
+        max_allowed_packet: 1073741824
+        wait_timeout: 28800
+        log_bin_trust_function_creators: 1
+
+
+Outputs:
+  rdsEndpoint:
+    Description: A reference to the public subnet in the 1st Availability Zone
+    Value: !GetAtt DatabaseInstance.Endpoint.Address

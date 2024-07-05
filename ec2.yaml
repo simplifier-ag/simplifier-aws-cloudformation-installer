@@ -1,0 +1,248 @@
+Parameters:
+  VPCId:
+    Description: VPCId
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Description: SubnetId
+    Type: AWS::EC2::Subnet::Id
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    ConstraintDescription: must be a valid EC2 instance type.
+  DBUsername:
+    NoEcho: 'true'
+    Description: Username for MySQL database access
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBPassword:
+    NoEcho: 'true'
+    Description: Password MySQL database access
+    Type: String
+    MinLength: '8'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric characters.
+  DBHost:
+    Description: DBHost endpoint
+    Type: String
+  ssmRoleName:
+    Description: IAM Role to enable EC2 for SSM access and ECS.
+    Type: String
+  ec2InstanceSecurityGroup:
+    Description: Security group to allow access to EC2.
+    Type: AWS::EC2::SecurityGroup::Id
+  AmazonLinuxAMIParameter:
+    Description: Amazon ECS-optimized Linux AMI ID
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
+  dataDiskSize:
+    Description: Size of EBS device attached to VM and will be mounted at /var/lib/simplifier
+    Type: String
+
+Resources:
+  # ECS Resources cfn-init --stack ec2temp3 --resource EC2Instance --region eu-central-1 --configsets InstallAndRun
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Metadata: 
+      AWS::CloudFormation::Init: 
+        configSets:
+          InstallAndRun:
+            - Install
+        Install:
+          files: 
+            /opt/hosts: 
+              content: !Sub |
+                [host]
+                localhost ansible_connection=local
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            /opt/pre-install.yml: 
+              content: !Sub |
+                ---
+                - name: Prerequisite
+                  hosts: all
+                  become: yes
+                  tasks:
+                  - name: yum update
+                    ansible.builtin.yum:
+                      name: "*"
+                      state: latest
+                  - name: yum install MySql and AWS CW agent
+                    ansible.builtin.yum:
+                      name: 
+                        - "mysql"
+                        - "amazon-cloudwatch-agent"
+                        - "aws-cli"
+                      state: latest
+                  - name: pip install PyMySQL
+                    vars:
+                      ansible_python_interpreter: /usr/bin/python3
+                    ansible.builtin.pip:
+                      name: PyMySQL
+                      executable: /usr/bin/pip3
+                      state: present
+                  - name: Install ansible-galaxy collection community.general, ansible.posix and community.mysql
+                    ansible.builtin.shell: 
+                      cmd: 'ansible-galaxy collection install -r requirements.yml'
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            /opt/requirements.yml: 
+              content: !Sub |
+                ---
+                collections:
+                - community.general
+                - ansible.posix
+                - community.mysql
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            /opt/main.yml: 
+              content: !Sub |
+                ---
+                - name: Bootstrap
+                  hosts: all
+                  become: yes
+                  vars:
+                    ecs: "{{ ECS_CLUSTER }}"
+                    usr: "{{ DB_USER }}"
+                    pas: "{{ DB_PASS }}"
+                    host: "{{ DB_HOST }}"
+                  tasks:
+                  - name: Create a directory /etc/ecs if it does not exist
+                    ansible.builtin.file:
+                      path: /etc/ecs
+                      state: directory
+                  - name: Creating a file with ECS cluster Name
+                    ansible.builtin.copy:
+                      dest: "/etc/ecs/ecs.config"
+                      content: |
+                        ECS_CLUSTER={{ ecs }}
+                  - name: agent.db state check
+                    stat: path=/var/lib/ecs/data/agent.db
+                    register: file_stat
+                  - name: Move file to backup
+                    command: mv /var/lib/ecs/data/agent.db /var/lib/ecs/data/agent.db.movedByTerraform
+                    when: file_stat.stat.exists
+                    notify:
+                      - Restart ecs
+                  - name: Create a simplifier directory if it does not exist
+                    ansible.builtin.file:
+                      path: /var/lib/simplifier
+                      state: directory
+                  - name: Wait until the mounted disc is as file in /dev is present before continuing
+                    ansible.builtin.wait_for:
+                      path: /dev/nvme1n1
+                  - name: Create a XFS filesystem on mounted disc
+                #    ignore_errors: true
+                    vars:
+                      ansible_python_interpreter: /usr/bin/python3
+                    filesystem:
+                      fstype: xfs
+                      dev: /dev/nvme1n1
+                  - name: get UUID of mounted disc
+                    ansible.builtin.shell: 
+                      cmd: 'blkid /dev/nvme1n1 | cut -f2 -d" "'
+                    register: uuid
+                  - name: Mount up device by UUID
+                    ansible.posix.mount:
+                      path: /var/lib/simplifier
+                      src: "{{ uuid.stdout }}"
+                      fstype: xfs
+                      opts: noatime
+                      state: mounted
+                  - name: Give ec2-user permissions to an designtime folder
+                    ansible.builtin.file:
+                      path: /var/lib/simplifier/workflow-designtime/data
+                      owner: ec2-user
+                      group: ec2-user
+                      recurse: true
+                  - name: Create a new database with standard DB Names
+                    vars:
+                      ansible_python_interpreter: /usr/bin/python3
+                      ignore_errors: true
+                      mysql_databases:
+                        - simplifier
+                        - simplifier_content
+                        - simplifier_session
+                        - simplifier_keyvalue
+                        - simplifier_jsonstore
+                        - simplifier_wrt
+                        - simplifier_wdt
+                    community.mysql.mysql_db:
+                      name: "{{ item }}"
+                      login_user: "{{ usr }}"
+                      login_host: "{{ host }}"
+                      login_password: "{{ pas }}"
+                      state: present
+                    loop: "{{ mysql_databases }}"
+                  handlers:
+                    - name: Restart ecs
+                      ansible.builtin.service:
+                        name: ecs
+                        state: restarted
+              mode: "000644"
+              owner: "root"
+              group: "root"
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmazonLinuxAMIParameter #"ami-031ef26e74b8f374c"  # Specify your desired AMI ID
+      IamInstanceProfile: !Ref EC2InstanceProfile
+#      KeyName: !Ref NewKeyPair  # Specify your key pair for SSH access
+      SecurityGroupIds:
+#        - !Ref SecurityGroupIds # Specify the security group IDs
+        - !Ref ec2InstanceSecurityGroup
+      SubnetId: !Ref SubnetId
+      BlockDeviceMappings:
+      - DeviceName: "/dev/xvda"
+        Ebs:
+          VolumeSize: '40'
+          VolumeType: gp3
+          Encrypted: 'true'
+          DeleteOnTermination: 'true'
+      - DeviceName: "/dev/xvdb"
+        Ebs:
+          VolumeSize: !Ref dataDiskSize
+          VolumeType: gp3
+          Encrypted: 'true'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo yum update -y
+          sudo amazon-linux-extras install ansible2 -y
+          sudo yum install -y aws-cfn-bootstrap
+          cfn-init --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region} --configsets InstallAndRun
+          ansible-playbook /opt/pre-install.yml -i /opt/hosts -vv
+          ansible-playbook /opt/main.yml -i /opt/hosts --extra-vars "ECS_CLUSTER=simplifier-cluster DB_USER=${DBUsername} DB_PASS=${DBPassword} DB_HOST=${DBHost}" -vv
+          echo "Bootstrapping Complete!"
+#      PropagateTagsToVolumeOnCreation: 'true'
+      Tags:
+        - Key: Name
+          Value: "simplifier-instance"
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref ssmRoleName
+
+  EC2Eip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: "vpc"
+      InstanceId: !GetAtt EC2Instance.InstanceId
+      Tags:
+        - Key: Name
+          Value: "simplifier-EIP"
+
+Outputs:
+  EC2EipAddress:
+    Description: Ingress Public IP- A reference to the Elastic IP attached to EC2 Instance.
+    Value: !Ref EC2Eip
+
+
+
