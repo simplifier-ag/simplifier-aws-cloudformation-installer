@@ -163,7 +163,7 @@ Resources:
   SimplifierStackVPC:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://simplifier-ag.github.io/simplifier-aws-cloudformation-installer/vpc.yaml
+      TemplateURL: https://cdn.jsdelivr.net/gh/simplifier-ag/simplifier-aws-cloudformation-installer@main/vpc.yaml
       Parameters:
         VpcCIDR: !Ref VpcCIDR
         PublicSubnet1CIDR: !Ref PublicSubnet1CIDR
@@ -174,7 +174,7 @@ Resources:
   SimplifierStackECS:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://simplifier-ag.github.io/simplifier-aws-cloudformation-installer/ecs.yaml
+      TemplateURL: https://cdn.jsdelivr.net/gh/simplifier-ag/simplifier-aws-cloudformation-installer@main/ecs.yaml
       Parameters:
         VPCId: !GetAtt SimplifierStackVPC.Outputs.VPC
         SubnetIds: !GetAtt SimplifierStackVPC.Outputs.PrivateSubnets
@@ -196,7 +196,7 @@ Resources:
   SimplifierStackEC2:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://simplifier-ag.github.io/simplifier-aws-cloudformation-installer/ec2.yaml
+      TemplateURL: https://cdn.jsdelivr.net/gh/simplifier-ag/simplifier-aws-cloudformation-installer@main/ec2.yaml
       Parameters:
         InstanceType: !Ref InstanceType
         ssmRoleName: !GetAtt rolesANDsecurityGroup.Outputs.ssmRoleName
@@ -212,7 +212,7 @@ Resources:
   SimplifierStackRDS:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://simplifier-ag.github.io/simplifier-aws-cloudformation-installer/rds.yaml
+      TemplateURL: https://cdn.jsdelivr.net/gh/simplifier-ag/simplifier-aws-cloudformation-installer@main/rds.yaml
       Parameters:
         VPCId: !GetAtt SimplifierStackVPC.Outputs.VPC
         SubnetIds: !GetAtt SimplifierStackVPC.Outputs.PrivateSubnets
@@ -226,7 +226,7 @@ Resources:
   rolesANDsecurityGroup:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://simplifier-ag.github.io/simplifier-aws-cloudformation-installer/rolesANDsecurityGroup.yaml
+      TemplateURL: https://cdn.jsdelivr.net/gh/simplifier-ag/simplifier-aws-cloudformation-installer@main/rolesANDsecurityGroup.yaml
       Parameters:
         VPCId: !GetAtt SimplifierStackVPC.Outputs.VPC
 
